@@ -4,10 +4,14 @@ struct SettingsView: View {
     @AppStorage("defaultWeightUnit") private var defaultWeightUnit = "kg"
     @AppStorage("enableNotifications") private var enableNotifications = true
     @AppStorage("duplicateDoseAlert") private var duplicateDoseAlert = true
+    @ObservedObject private var subscriptionService = SubscriptionService.shared
+    @ObservedObject private var syncService = SyncService.shared
     
     var body: some View {
         NavigationStack {
             List {
+                subscriptionSection
+                iCloudSection
                 preferencesSection
                 notificationsSection
                 safetySection
@@ -15,6 +19,57 @@ struct SettingsView: View {
                 supportSection
             }
             .navigationTitle("Settings")
+        }
+    }
+    
+    private var subscriptionSection: some View {
+        Section {
+            NavigationLink(destination: SubscriptionSettingsView()) {
+                HStack {
+                    Label("Subscription", systemImage: "crown.fill")
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    if subscriptionService.currentTier.isPro {
+                        ProBadge()
+                    } else {
+                        Text("Free")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+    
+    private var iCloudSection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { syncService.iCloudEnabled },
+                set: { _ in syncService.toggleiCloud() }
+            )) {
+                HStack {
+                    Label("iCloud Sync", systemImage: "icloud")
+                        .foregroundStyle(.blue)
+                    Spacer()
+                    if syncService.iCloudEnabled {
+                        SyncStatusBadge(status: syncService.syncStatus)
+                    }
+                }
+            }
+            
+            if syncService.iCloudEnabled {
+                HStack {
+                    Text("Sync Status")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(syncService.syncStatus.displayText)
+                        .font(.subheadline)
+                }
+            }
+        } header: {
+            Text("Data Sync")
+        } footer: {
+            Text("Enable iCloud to sync medication data across devices and share with other caregivers.")
         }
     }
     

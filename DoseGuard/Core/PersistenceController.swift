@@ -4,7 +4,16 @@ import SwiftUI
 final class PersistenceController: ObservableObject {
     static let shared = PersistenceController()
     
-    let container: NSPersistentContainer
+    private var _container: NSPersistentContainer?
+    private var cloudKitContainer: NSPersistentCloudKitContainer?
+    private var localContainer: NSPersistentContainer?
+    
+    var container: NSPersistentContainer {
+        if let existing = _container {
+            return existing
+        }
+        return createContainer()
+    }
     
     static var preview: PersistenceController = {
         let controller = PersistenceController(inMemory: true)
@@ -53,21 +62,96 @@ final class PersistenceController: ObservableObject {
         return controller
     }()
     
+    private let inMemory: Bool
+    
     init(inMemory: Bool = false) {
-        container = NSPersistentContainer(name: "DoseGuard")
+        self.inMemory = inMemory
+        _ = createContainer()
         
-        if inMemory {
-            container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleiCloudEnabledChange),
+            name: SyncService.iCloudEnabledDidChange,
+            object: nil
+        )
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    private func createContainer() -> NSPersistentContainer {
+        let iCloudEnabled = UserDefaults.standard.bool(forKey: "iCloudEnabled")
+        
+        if iCloudEnabled && !inMemory {
+            let cloudContainer = NSPersistentCloudKitContainer(name: "DoseGuard")
+            cloudContainer.loadPersistentStores { _, error in
+                if let error = error as NSError? {
+                    fatalError("Unresolved error \(error), \(error.userInfo)")
+                }
+            }
+            cloudContainer.viewContext.automaticallyMergesChangesFromParent = true
+            cloudContainer.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+            cloudKitContainer = cloudContainer
+            _container = cloudContainer
+            return cloudContainer
+        } else {
+            let local = NSPersistentContainer(name: "DoseGuard")
+            if inMemory {
+                local.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
+            }
+            local.loadPersistentStores { _, error in
+                if let error = error as NSError? {
+                    fatalError("Unresolved error \(error), \(error.userInfo)")
+                }
+            }
+            local.viewContext.automaticallyMergesChangesFromParent = true
+            local.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+            localContainer = local
+            _container = local
+            return local
+        }
+    }
+    
+    @objc private func handleiCloudEnabledChange() {
+        let iCloudEnabled = UserDefaults.standard.bool(forKey: "iCloudEnabled")
+        
+        if iCloudEnabled {
+            switchToCloudKit()
+        } else {
+            switchToLocal()
+        }
+    }
+    
+    func switchToCloudKit() {
+        guard cloudKitContainer == nil else {
+            _container = cloudKitContainer
+            objectWillChange.send()
+            return
         }
         
-        container.loadPersistentStores { _, error in
+        let cloudContainer = NSPersistentCloudKitContainer(name: "DoseGuard")
+        cloudContainer.loadPersistentStores { _, error in
             if let error = error as NSError? {
-                fatalError("Unresolved error \(error), \(error.userInfo)")
+                print("CloudKit container error: \(error)")
+                return
             }
         }
-        
-        container.viewContext.automaticallyMergesChangesFromParent = true
-        container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        cloudContainer.viewContext.automaticallyMergesChangesFromParent = true
+        cloudContainer.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        cloudKitContainer = cloudContainer
+        _container = cloudContainer
+        objectWillChange.send()
+    }
+    
+    func switchToLocal() {
+        guard let local = localContainer else {
+            _container = createContainer()
+            objectWillChange.send()
+            return
+        }
+        _container = local
+        objectWillChange.send()
     }
     
     func save() {

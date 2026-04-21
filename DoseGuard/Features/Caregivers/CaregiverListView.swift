@@ -9,6 +9,8 @@ struct CaregiverListView: View {
     ) private var caregivers: FetchedResults<Caregiver>
     
     @State private var showingAddCaregiver = false
+    @State private var showingiCloudPrompt = false
+    @ObservedObject private var syncService = SyncService.shared
     
     var body: some View {
         NavigationStack {
@@ -19,7 +21,7 @@ struct CaregiverListView: View {
                         title: "No Caregivers",
                         subtitle: "Add caregivers who help administer medications",
                         actionTitle: "Add Caregiver",
-                        action: { showingAddCaregiver = true }
+                        action: { checkAndShowAddCaregiver() }
                     )
                 } else {
                     List {
@@ -33,7 +35,7 @@ struct CaregiverListView: View {
             .navigationTitle("Caregivers")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button(action: { showingAddCaregiver = true }) {
+                    Button(action: { checkAndShowAddCaregiver() }) {
                         Image(systemName: "plus")
                     }
                 }
@@ -41,6 +43,36 @@ struct CaregiverListView: View {
             .sheet(isPresented: $showingAddCaregiver) {
                 CaregiverEditorView()
             }
+            .overlay {
+                if showingiCloudPrompt {
+                    ZStack {
+                        Color.black.opacity(0.4)
+                            .ignoresSafeArea()
+                            .onTapGesture { showingiCloudPrompt = false }
+                        
+                        iCloudSyncPrompt(
+                            reason: .addCaregiver,
+                            onEnable: {
+                                syncService.enableiCloud()
+                                showingiCloudPrompt = false
+                                showingAddCaregiver = true
+                            },
+                            onDismiss: {
+                                showingiCloudPrompt = false
+                                showingAddCaregiver = true
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    private func checkAndShowAddCaregiver() {
+        if caregivers.count >= 1 && !syncService.iCloudEnabled {
+            showingiCloudPrompt = true
+        } else {
+            showingAddCaregiver = true
         }
     }
     
