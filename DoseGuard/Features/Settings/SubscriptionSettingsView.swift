@@ -2,15 +2,18 @@ import SwiftUI
 
 struct SubscriptionSettingsView: View {
     @ObservedObject private var subscriptionService = SubscriptionService.shared
+    @ObservedObject private var storeKitManager = StoreKitManager.shared
     @State private var showPaywall = false
     
     var body: some View {
         List {
             currentPlanSection
-            if !subscriptionService.currentTier.isPro {
+            if !storeKitManager.isLoading && !subscriptionService.currentTier.isPro {
                 upgradeSection
             }
-            manageSection
+            if !storeKitManager.isLoading {
+                manageSection
+            }
         }
         .navigationTitle("Subscription")
         .sheet(isPresented: $showPaywall) {
@@ -20,22 +23,34 @@ struct SubscriptionSettingsView: View {
     
     private var currentPlanSection: some View {
         Section(header: Text("Current Plan")) {
-            HStack {
-                Image(systemName: subscriptionService.currentTier.isPro ? "checkmark.seal.fill" : "star")
-                    .foregroundStyle(subscriptionService.currentTier.isPro ? .green : .secondary)
-                
-                VStack(alignment: .leading) {
-                    Text(subscriptionService.currentTier.isPro ? "DoseGuard Pro" : "Free Plan")
-                        .font(.headline)
-                    Text(subscriptionService.currentTier.isPro ? "All features unlocked" : "Limited features")
+            if storeKitManager.isLoading {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading...")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Spacer()
                 }
-                
-                Spacer()
-                
-                if subscriptionService.currentTier.isPro {
-                    ProBadge()
+            } else {
+                HStack {
+                    Image(systemName: subscriptionService.currentTier.isPro ? "checkmark.seal.fill" : "star")
+                        .foregroundStyle(subscriptionService.currentTier.isPro ? .green : .secondary)
+                    
+                    VStack(alignment: .leading) {
+                        Text(subscriptionService.currentTier.isPro ? "DoseGuard Pro" : "Free Plan")
+                            .font(.headline)
+                        Text(subscriptionService.currentTier.isPro ? "All features unlocked" : "Limited features")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    if subscriptionService.currentTier.isPro {
+                        ProBadge()
+                    }
                 }
             }
         }

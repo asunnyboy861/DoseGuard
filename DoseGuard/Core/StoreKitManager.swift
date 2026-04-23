@@ -9,6 +9,7 @@ final class StoreKitManager: ObservableObject {
     @Published var purchasedProductIDs: Set<String> = []
     @Published var isPurchasing = false
     @Published var errorMessage: String?
+    @Published var isLoading = true  // 新增：加载状态标志
     
     private var transactionListener: Task<Void, Error>?
     
@@ -29,6 +30,10 @@ final class StoreKitManager: ObservableObject {
         Task { @MainActor in
             self.transactionListener = self.listenForTransactions()
             await self.loadProducts()
+            await self.updatePurchasedProducts()
+            
+            // 双重验证：延迟再次检查，确保状态正确
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
             await self.updatePurchasedProducts()
         }
     }
@@ -75,9 +80,12 @@ final class StoreKitManager: ObservableObject {
     }
     
     var isProUnlocked: Bool {
-        purchasedProductIDs.contains(ProductID.monthly) ||
-        purchasedProductIDs.contains(ProductID.yearly) ||
-        purchasedProductIDs.contains(ProductID.lifetime)
+        // 只有在加载完成后才判断，防止初始化时错误显示为Pro
+        guard !isLoading else { return false }
+        
+        return purchasedProductIDs.contains(ProductID.monthly) ||
+               purchasedProductIDs.contains(ProductID.yearly) ||
+               purchasedProductIDs.contains(ProductID.lifetime)
     }
     
     private func updatePurchasedProducts() async {
@@ -86,13 +94,25 @@ final class StoreKitManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             do {
                 let transaction = try checkVerified(result)
-                purchasedIDs.insert(transaction.productID)
+                
+                // StoreKit 2: currentEntitlements 只返回有效的交易
+                // 检查订阅是否过期（仅对自动续期订阅）
+                if let expirationDate = transaction.expirationDate {
+                    if expirationDate > Date() {
+                        purchasedIDs.insert(transaction.productID)
+                    }
+                    // 过期则不添加
+                } else {
+                    // 终身购买没有过期日期
+                    purchasedIDs.insert(transaction.productID)
+                }
             } catch {
                 print("Transaction verification failed: \(error)")
             }
         }
         
         purchasedProductIDs = purchasedIDs
+        isLoading = false  // 加载完成
     }
     
     private func listenForTransactions() -> Task<Void, Error> {
